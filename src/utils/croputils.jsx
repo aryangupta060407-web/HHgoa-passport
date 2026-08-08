@@ -52,9 +52,10 @@ export async function getCroppedImg(imageSrc, pixelCrop, rotation = 0) {
     pixelCrop.height
   );
 
-  return new Promise((resolve) => {
-    croppedCanvas.toBlob((file) => {
-      resolve(URL.createObjectURL(file));
-    }, 'image/jpeg', 0.95);
-  });
+  // IMPORTANT: use PNG, not JPEG, here. JPEG has no alpha channel, so any
+  // transparent pixels in the crop (e.g. the crop box extending past the
+  // rotated source image's edges when zoomed/panned) get flattened to
+  // opaque white by the encoder — that's the "white corner, photo not
+  // filling the frame" bug. PNG preserves transparency instead.
+  return croppedCanvas.toDataURL('image/png');
 }

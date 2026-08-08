@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { 
   Upload, 
   Download, 
@@ -6,18 +6,14 @@ import {
   Sparkles, 
   Share2, 
   Check, 
-  ShieldCheck, 
-  Zap, 
   Terminal, 
-  Code2, 
-  MapPin, 
   User, 
-  Briefcase, 
-  Layers,
   X,
   Loader2
 } from 'lucide-react';
-import html2canvas from 'html2canvas';
+import Cropper from 'react-easy-crop';
+import { getCroppedImg } from '../utils/croputils';
+import BuilderPassportCard from './BuilderPassportCard';
 
 export default function LandingPrototype() {
   // Image Upload & Processing State
@@ -26,6 +22,8 @@ export default function LandingPrototype() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
 
   // Success Modal State
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -35,6 +33,12 @@ export default function LandingPrototype() {
     const randomDigits = Math.floor(1000 + Math.random() * 9000);
     return `HHG-2026-${randomDigits}`;
   });
+
+  // Numeric builder tag derived from the generated ID, used on the SVG pass
+  const builderNumber = useMemo(() => {
+    const digits = builderId.replace(/\D/g, '');
+    return (parseInt(digits.slice(-3), 10) % 247) + 1;
+  }, [builderId]);
 
   // Editable Builder Identity state
   const [builderData, setBuilderData] = useState({
@@ -47,7 +51,49 @@ export default function LandingPrototype() {
   });
 
   const fileInputRef = useRef(null);
-  const cardRef = useRef(null);
+  const cardRef = useRef(null); // now points at the <svg> element itself
+
+  // Serializes the live <svg> node and rasterizes it via the browser's own
+  // SVG renderer (not html2canvas). This is what fixes the white-corner /
+  // partial-photo export bug: html2canvas screenshots the DOM and has
+  // notoriously unreliable support for clipPath + rounded corners + <image>,
+  // so rounded card corners and the clipped photo were rendering as flat
+  // white boxes in the export even though the on-screen preview looked fine.
+  const svgToPngBlob = useCallback(async (svgElement, scale = 2) => {
+    if (!svgElement) throw new Error('No card to export yet');
+    const clone = svgElement.cloneNode(true);
+    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    const width = parseInt(svgElement.getAttribute('width'), 10) || 1080;
+    const height = parseInt(svgElement.getAttribute('height'), 10) || 1080;
+
+    const svgString = new XMLSerializer().serializeToString(clone);
+    const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(svgBlob);
+
+    try {
+      const img = await new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = () => reject(new Error('Failed to rasterize card SVG'));
+        image.src = url;
+      });
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width * scale;
+      canvas.height = height * scale;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+      return await new Promise((resolve, reject) => {
+        canvas.toBlob((blob) => {
+          if (blob) resolve(blob);
+          else reject(new Error('Canvas export failed'));
+        }, 'image/png');
+      });
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }, []);
 
   // Handle keyboard modal dismissal (Escape)
   const handleKeyDown = useCallback((e) => {
@@ -76,42 +122,65 @@ export default function LandingPrototype() {
       const reader = new FileReader();
       reader.onload = (event) => {
         setImage(event.target.result);
-        setCroppedImage(event.target.result);
+        setCrop({ x: 0, y: 0 });
+        setZoom(1);
+        setRotation(0);
+        setCroppedAreaPixels(null);
         setIsProcessing(false);
       };
       reader.readAsDataURL(file);
     }
   };
 
+  const onCropComplete = useCallback((_croppedArea, croppedAreaPixelsValue) => {
+    setCroppedAreaPixels(croppedAreaPixelsValue);
+  }, []);
+
+  // Bakes the current crop/zoom/rotation into a real image whenever any of
+  // them change, so the passport preview always shows the actual crop.
+  useEffect(() => {
+    if (!image || !croppedAreaPixels) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const cropped = await getCroppedImg(image, croppedAreaPixels, rotation);
+        if (!cancelled) setCroppedImage(cropped);
+      } catch (err) {
+        console.error('Failed to crop image:', err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [image, croppedAreaPixels, rotation]);
+
   const handleReset = () => {
     setImage(null);
     setCroppedImage(null);
     setZoom(1);
     setRotation(0);
+    setCrop({ x: 0, y: 0 });
+    setCroppedAreaPixels(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // Real Export via html2canvas
+  // Real Export via native SVG rasterization
   const handleDownload = async () => {
     if (!cardRef.current || isProcessing) return;
     setIsProcessing(true);
 
     try {
-      const canvas = await html2canvas(cardRef.current, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: null,
-        logging: false,
-      });
-
+      const blob = await svgToPngBlob(cardRef.current, 2);
       const firstName = builderData.firstName.trim() || 'builder';
       const lastName = builderData.lastName.trim() || 'pass';
       const filename = `HHGOA-${firstName}-${lastName}.png`;
 
+      const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.download = filename;
-      link.href = canvas.toDataURL('image/png');
+      link.href = url;
       link.click();
+      URL.revokeObjectURL(url);
 
       setShowSuccessModal(true);
     } catch (error) {
@@ -122,16 +191,43 @@ export default function LandingPrototype() {
   };
 
   // Share Intent on X
-  const handleShareOnX = () => {
+  //
+  // X/Twitter's web "intent" URL (twitter.com/intent/tweet) can ONLY
+  // pre-fill text — it has no parameter for attaching media, on any device.
+  // The Web Share API (navigator.share with a file) is the one path that
+  // can actually hand X an image, and it only works on mobile browsers
+  // that support sharing files — it hands off to the X app directly. On
+  // desktop there's no equivalent, so we just open the caption-only
+  // compose window, same as before.
+  const canShareFiles =
+    typeof navigator !== 'undefined' && !!navigator.share && !!navigator.canShare;
+
+  const handleShareOnX = async () => {
     const tweetText = `Just claimed my Builder Identity for Hacker House Goa 2026 🚀\n\nBuilt with #FrameInGoa\n#HHGoa`;
+
+    if (canShareFiles && cardRef.current) {
+      try {
+        const blob = await svgToPngBlob(cardRef.current, 2);
+        const file = new File([blob], 'hhgoa-builder-pass.png', { type: 'image/png' });
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+            text: tweetText,
+            title: 'HH Goa Builder Pass',
+          });
+          return;
+        }
+      } catch (error) {
+        if (error?.name === 'AbortError') return; // user dismissed the native share sheet
+        console.error('Native share failed, falling back to text-only intent:', error);
+      }
+    }
+
+    // Desktop (or anywhere file sharing isn't supported): caption only,
+    // exactly like the original behavior — no auto-download.
     const shareUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(tweetText)}`;
     window.open(shareUrl, '_blank', 'noopener,noreferrer');
   };
-
-  const techStackList = builderData.techStack
-    .split(',')
-    .map((tech) => tech.trim())
-    .filter(Boolean);
 
   return (
     <div className="min-h-screen bg-[#080b0e] text-slate-100 font-sans antialiased selection:bg-emerald-500 selection:text-black relative overflow-x-hidden">
@@ -235,16 +331,24 @@ export default function LandingPrototype() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <div className="relative aspect-video rounded-xl overflow-hidden bg-slate-950 border border-white/10 flex items-center justify-center shadow-inner">
-                    <img
-                      src={croppedImage}
-                      alt="Avatar Preview"
-                      style={{
-                        transform: `scale(${zoom}) rotate(${rotation}deg)`,
-                      }}
-                      className="max-h-full object-contain transition-transform duration-100 ease-out"
+                  <div className="relative aspect-video rounded-xl overflow-hidden bg-slate-950 border border-white/10 shadow-inner">
+                    <Cropper
+                      image={image}
+                      crop={crop}
+                      zoom={zoom}
+                      rotation={rotation}
+                      aspect={1}
+                      cropShape="round"
+                      showGrid={false}
+                      onCropChange={setCrop}
+                      onZoomChange={setZoom}
+                      onRotationChange={setRotation}
+                      onCropComplete={onCropComplete}
                     />
                   </div>
+                  <p className="text-[10px] text-slate-500 font-mono text-center">
+                    Drag the photo to reposition · use sliders for zoom &amp; rotate
+                  </p>
 
                   <div className="grid grid-cols-2 gap-4 text-xs font-mono">
                     <div className="space-y-1.5">
@@ -425,6 +529,9 @@ export default function LandingPrototype() {
                 <Share2 className="w-4 h-4" /> Share on X
               </button>
             </div>
+            <p className="text-[11px] text-slate-500 font-mono">
+              On phones with the X app, this attaches your pass directly. On desktop, X's share link only supports text — it'll open your tweet with the caption pre-filled; download the pass above to attach it.
+            </p>
 
           </div>
 
@@ -438,125 +545,19 @@ export default function LandingPrototype() {
                 <span className="text-[11px] text-slate-500">FORMAT: ID-CARD-V2</span>
               </div>
 
-              {/* BUILDER CARD TARGET */}
-              <div
+              {/* BUILDER CARD TARGET — HH Goa SVG passport, driven by live form state */}
+              <BuilderPassportCard
                 ref={cardRef}
-                className="relative rounded-2xl overflow-hidden bg-slate-950 border border-white/10 p-6 sm:p-8 shadow-2xl transition-all duration-300"
-              >
-                {/* Subtle Gradient Layers */}
-                <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
-                <div className="absolute bottom-0 left-0 w-80 h-80 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
-                
-                {/* Visual Dot Matrix Pattern */}
-                <div className="absolute inset-0 bg-[radial-gradient(#ffffff0a_1px,transparent_1px)] [background-size:16px_16px] pointer-events-none" />
-
-                {/* Card Top Header */}
-                <div className="relative z-10 flex justify-between items-start border-b border-white/10 pb-5">
-                  <div className="space-y-1.5">
-                    <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-[10px] text-emerald-400 font-mono tracking-wider uppercase">
-                      <Zap className="w-3 h-3" />
-                      {builderData.archetype || 'Builder Archetype'}
-                    </div>
-                    <p className="text-xs text-slate-400 font-mono">
-                      ID: {builderId}
-                    </p>
-                  </div>
-                  
-                  {/* Ultra-Realistic Passport Stamp */}
-                  <div className="relative border-2 border-dashed border-emerald-500/50 rounded-lg px-2.5 py-1.5 transform rotate-6 bg-slate-950/80 shadow-md flex flex-col items-center justify-center text-center select-none">
-                    <div className="absolute -inset-0.5 border border-emerald-500/20 rounded-lg pointer-events-none" />
-                    <span className="text-[9px] font-mono font-bold text-emerald-400 tracking-widest uppercase leading-none">
-                      VERIFIED
-                    </span>
-                    <span className="text-[11px] font-mono font-black text-white tracking-tight my-0.5">
-                      GOA '26
-                    </span>
-                    <div className="flex items-center gap-1 text-[8px] font-mono text-emerald-400/90">
-                      <ShieldCheck className="w-2.5 h-2.5" />
-                      <span>PASSPORT</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Card Main Body */}
-                <div className="relative z-10 py-6 flex flex-col sm:flex-row gap-6 items-start sm:items-center">
-                  {/* Avatar Container */}
-                  <div className="relative group mx-auto sm:mx-0 shrink-0">
-                    <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-2xl overflow-hidden bg-slate-900 border-2 border-emerald-500/30 flex items-center justify-center relative shadow-xl">
-                      {croppedImage ? (
-                        <img
-                          src={croppedImage}
-                          alt="Builder Avatar"
-                          style={{
-                            transform: `scale(${zoom}) rotate(${rotation}deg)`,
-                          }}
-                          className="w-full h-full object-cover transition-transform duration-100 ease-out"
-                        />
-                      ) : (
-                        <div className="text-center p-3">
-                          <User className="w-10 h-10 text-slate-700 mx-auto mb-1" />
-                          <span className="text-[10px] text-slate-500 font-mono block">NO AVATAR</span>
-                        </div>
-                      )}
-                    </div>
-                    <div className="absolute -bottom-2 -right-2 bg-emerald-400 text-slate-950 p-1.5 rounded-lg shadow-lg border border-slate-950">
-                      <Code2 className="w-3.5 h-3.5" />
-                    </div>
-                  </div>
-
-                  {/* Profile Details */}
-                  <div className="space-y-3 flex-1 text-center sm:text-left min-w-0 w-full">
-                    <div>
-                      <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight truncate">
-                        {builderData.firstName || builderData.lastName
-                          ? `${builderData.firstName} ${builderData.lastName}`.trim()
-                          : 'Anonymous Builder'}
-                      </h2>
-                      <p className="text-emerald-400 text-xs sm:text-sm font-semibold font-mono mt-1 flex items-center justify-center sm:justify-start gap-1.5 truncate">
-                        <Briefcase className="w-3.5 h-3.5 shrink-0" />
-                        {builderData.role || 'Builder Role'}
-                      </p>
-                    </div>
-
-                    <div className="flex items-center justify-center sm:justify-start gap-1.5 text-xs text-slate-400 font-mono">
-                      <MapPin className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                      <span>{builderData.location || 'Remote'}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Card Tech Stack Footer */}
-                <div className="relative z-10 border-t border-white/10 pt-4 space-y-2">
-                  <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono">
-                    <span className="uppercase tracking-wider font-semibold flex items-center gap-1.5">
-                      <Layers className="w-3 h-3 text-emerald-400" />
-                      Primary Stack
-                    </span>
-                    <span className="text-slate-500">{techStackList.length} TAGS</span>
-                  </div>
-
-                  <div className="flex flex-wrap gap-1.5 pt-1">
-                    {techStackList.length > 0 ? (
-                      techStackList.map((tech, idx) => (
-                        <span
-                          key={`${tech}-${idx}`}
-                          className="px-2.5 py-1 rounded-md text-xs font-mono bg-slate-900 text-emerald-300 border border-emerald-500/20"
-                        >
-                          {tech}
-                        </span>
-                      ))
-                    ) : (
-                      <span className="text-xs text-slate-500 font-mono italic">No stack specified</span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Pass Sub-Footer */}
-                <div className="relative z-10 mt-6 pt-4 border-t border-white/5 flex justify-between items-center text-[10px] text-slate-500 font-mono">
-                  <span>HACKER HOUSE GOA</span>
-                  <span>BUILDER PASS v2.0</span>
-                </div>
-              </div>
+                photo={croppedImage}
+                firstName={builderData.firstName}
+                lastName={builderData.lastName}
+                role={builderData.role}
+                location={builderData.location}
+                archetype={builderData.archetype}
+                techStack={builderData.techStack}
+                builderId={builderId}
+                builderNumber={builderNumber}
+              />
 
               {/* Notice */}
               <p className="text-[11px] text-slate-500 text-center font-mono">
