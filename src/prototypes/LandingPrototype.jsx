@@ -308,7 +308,7 @@ export default function LandingPrototype() {
   };
 
   const handleShareOnX = async () => {
-    const tweetText = `Just claimed my Builder Identity for Hacker House Goa 2026 🚀\n\nBuilt with #FramedInGoa\n#HHGoa`;
+    const tweetText = `Just claimed my Builder Identity for Hacker House Goa 2026 🚀\n\nBuilt with #FrameInGoa\n#HHGoa`;
     const shareUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(tweetText)}`;
 
     if (!cardRef.current) {
@@ -473,7 +473,7 @@ export default function LandingPrototype() {
 
           <nav className="hidden md:flex items-center gap-7 text-[11px] tracking-widest font-bold uppercase text-[rgba(246,239,221,0.85)] relative z-10">
             <a href="#generator" className="hover:text-[#F2C14E] transition-colors duration-200">Builder ID</a>
-            <a href="#framed-in-goa" className="hover:text-[#FF3E8E] transition-colors duration-200">#FramedInGoa</a>
+            <a href="#framed-in-goa" className="hover:text-[#FF3E8E] transition-colors duration-200">#FrameInGoa</a>
             <a href="#how-it-works" className="hover:text-[#F2C14E] transition-colors duration-200">How It Works</a>
             <a href="https://hhgoa.com/" target="_blank" rel="noopener noreferrer" className="hover:text-[#F2C14E] transition-colors duration-200 flex items-center gap-1">
               HH Goa <ArrowUpRight className="w-3 h-3 text-[#F2C14E]" />
@@ -531,7 +531,7 @@ export default function LandingPrototype() {
               </div>
 
               <p className="text-xs text-[rgba(246,239,221,0.8)] leading-relaxed">
-                Create your Hacker House Goa 2026 Builder Passport. Share your identity pass across X with <span className="text-[#F2C14E] font-mono">#FramedInGoa</span> to join the community build movement.
+                Create your Hacker House Goa 2026 Builder Passport. Share your identity pass across X with <span className="text-[#F2C14E] font-mono">#FrameInGoa</span> to join the community build movement.
               </p>
 
               <div className="pt-2">
@@ -888,7 +888,7 @@ export default function LandingPrototype() {
         </div>
       </section>
 
-      {/* #FramedInGoa Campaign Section */}
+      {/* #FrameInGoa Campaign Section */}
       <section id="framed-in-goa" className="bg-[#0F4A31]/95 py-20 relative z-10 border-b border-[#1C6B3C]">
         <div className="max-w-7xl mx-auto px-6 sm:px-12">
           
@@ -896,7 +896,7 @@ export default function LandingPrototype() {
             
             <div className="lg:col-span-8 space-y-6">
               <span className="inline-block bg-[#FF3E8E] text-white text-xs font-bold tracking-widest uppercase px-2.5 py-1 rounded-full -rotate-2 shadow-[0_3px_0_rgba(0,0,0,0.25)]">
-                #FramedInGoa
+                #FrameInGoa
               </span>
               <h2 className="text-5xl sm:text-7xl font-black uppercase text-[#F6EFDD] font-display leading-none">
                 BUILD YOUR ID.<br />
@@ -904,7 +904,7 @@ export default function LandingPrototype() {
                 <span className="text-[#F2C14E]">SHARE IT.</span>
               </h2>
               <p className="text-xs sm:text-sm text-[rgba(246,239,221,0.72)] max-w-xl leading-relaxed font-['Space_Mono']">
-                Create your Hacker House Goa Builder ID, download your passport, and share your build identity with the community. Tag your post with <span className="text-[#FF3E8E] font-bold">#FramedInGoa</span> on X.
+                Create your Hacker House Goa Builder ID, download your passport, and share your build identity with the community. Tag your post with <span className="text-[#FF3E8E] font-bold">#FrameInGoa</span> on X.
               </p>
             </div>
 
@@ -962,7 +962,7 @@ export default function LandingPrototype() {
               <span className="text-3xl font-black text-[#F2C14E] font-display">03</span>
               <h3 className="text-lg font-bold text-[#F6EFDD] uppercase font-display">EXPORT &amp; SHARE</h3>
               <p className="text-xs text-[rgba(246,239,221,0.6)] leading-relaxed">
-                Download your high-resolution 1080 × 1080 PNG passport and post on X with #FramedInGoa.
+                Download your high-resolution 1080 × 1080 PNG passport and post on X with #FrameInGoa.
               </p>
             </div>
 
@@ -981,7 +981,7 @@ export default function LandingPrototype() {
               <span>HACKER HOUSE GOA 2026</span>
             </div>
             <p className="text-[10px] text-[rgba(246,239,221,0.4)]">
-              GOA, INDIA // 28 — 31 OCT 2026 // #FramedInGoa
+              GOA, INDIA // 28 — 31 OCT 2026 // #FrameInGoa
             </p>
           </div>
 
@@ -995,7 +995,7 @@ export default function LandingPrototype() {
               HHGOA.COM <ArrowUpRight className="w-3.5 h-3.5 text-[#F2C14E]" />
             </a>
             <a href="#generator" className="hover:text-[#F2C14E] transition-colors duration-200">BUILDER ID</a>
-            <a href="#framed-in-goa" className="hover:text-[#F2C14E] transition-colors duration-200">#FramedInGoa</a>
+            <a href="#framed-in-goa" className="hover:text-[#F2C14E] transition-colors duration-200">#FrameInGoa</a>
             <a 
               href="https://hhgoa.com/" 
               target="_blank" 
