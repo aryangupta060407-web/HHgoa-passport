@@ -1,4 +1,4 @@
-import React, { forwardRef } from 'react';
+import React, { forwardRef, memo } from 'react';
 
 // Deterministic "barcode" bars generated from the builder's ID/number, so the
 // same builder always gets the same-looking barcode instead of it changing
@@ -72,7 +72,7 @@ const BuilderBoardingPass = forwardRef(function BuilderBoardingPass(
   const techLine = techList.join('  ·  ').toUpperCase();
 
   return (
-    <div className="w-full max-w-[540px] mx-auto rounded-[32px] overflow-hidden shadow-[0_30px_60px_-15px_rgba(3,23,13,0.55)]">
+    <div className="w-full max-w-[540px] mx-auto rounded-[32px] overflow-hidden shadow-[0_20px_45px_-18px_rgba(5,26,15,0.45)]">
       <svg ref={ref} xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080" className="w-full h-auto">
         <defs>
           <style>{`
@@ -94,8 +94,8 @@ const BuilderBoardingPass = forwardRef(function BuilderBoardingPass(
               mask, then blended with "overlay" below so it both lightens
               and darkens the base color like real grain, instead of just
               darkening (which a flat noise-as-alpha-over-black would do). */}
-          <filter id="bpFilmGrain" x="0" y="0" width="100%" height="100%">
-            <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed="11" stitchTiles="stitch" result="noise" />
+          <filter id="bpFilmGrain" x="0" y="0" width="100%" height="100%" colorInterpolationFilters="sRGB">
+            <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="1" seed="11" stitchTiles="stitch" result="noise" />
             <feColorMatrix
               in="noise"
               type="matrix"
@@ -249,4 +249,4 @@ const BuilderBoardingPass = forwardRef(function BuilderBoardingPass(
   );
 });
 
-export default BuilderBoardingPass;
+export default memo(BuilderBoardingPass);
