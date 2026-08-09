@@ -222,7 +222,7 @@ const BuilderBoardingPass = forwardRef(function BuilderBoardingPass(
           </g>
 
           {/* Footer */}
-          <text x="90" y="1000" className="mono" fontSize="34" fontWeight="700" letterSpacing="1" fill="#FF0080">#FramedInGoa</text>
+          <text x="90" y="1000" className="mono" fontSize="34" fontWeight="700" letterSpacing="1" fill="#FF0080">#FrameInGoa</text>
           <text x="90" y="1032" className="mono" fontSize="14" letterSpacing="2" fill="#F7F2DF">BUILD · SHIP · GOA</text>
 
           <text x="990" y="988" textAnchor="end" className="serif" fontSize="24" fontWeight="700" letterSpacing="2" fill="#FFD600">BUILD IN PARADISE</text>
