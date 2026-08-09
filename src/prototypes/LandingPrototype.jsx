@@ -311,39 +311,66 @@ export default function LandingPrototype() {
     const tweetText = `Just claimed my Builder Identity for Hacker House Goa 2026 🚀\n\nBuilt with #FramedInGoa\n#HHGoa`;
     const shareUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(tweetText)}`;
 
-    // Mobile: try the native share sheet first (X's app usually registers
-    // as a share target there, and it can carry the image + caption together).
-    if (isMobileDevice && canShareFiles && cardRef.current) {
-      try {
-        const blob = await svgToPngBlob(cardRef.current, 2);
-        const file = new File([blob], 'hhgoa-builder-pass.png', { type: 'image/png' });
-        if (navigator.canShare({ files: [file] })) {
+    if (!cardRef.current) {
+      window.open(shareUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    try {
+      // Generate the exact passport image currently visible in the preview.
+      const blob = await svgToPngBlob(cardRef.current, 2);
+      const file = new File([blob], 'hhgoa-builder-pass.png', {
+        type: 'image/png',
+      });
+
+      // On phones/tablets, use the native share sheet. If X is installed,
+      // the X app can receive both the image and caption together.
+      if (
+        isMobileDevice &&
+        typeof navigator !== 'undefined' &&
+        navigator.share &&
+        navigator.canShare &&
+        navigator.canShare({ files: [file] })
+      ) {
+        try {
           await navigator.share({
             files: [file],
             text: tweetText,
             title: 'HH Goa Builder Pass',
           });
           return;
+        } catch (error) {
+          // User cancelled the share sheet — don't open anything else.
+          if (error?.name === 'AbortError') return;
         }
-      } catch (error) {
-        if (error?.name === 'AbortError') return;
-        // fall through to the intent link below on any other failure
       }
-    }
 
-    // Desktop (and any mobile fallback): X's web intent can only pre-fill
-    // text/hashtags, not an attached image — that's a platform limitation,
-    // not something we can script around. So we open the pre-filled tweet
-    // immediately AND download the pass image, so it's sitting in Downloads
-    // ready to drag into the tweet compose box — no OS share sheet detour.
-    if (cardRef.current) {
-      try {
-        await downloadCardImage();
-      } catch (error) {
-        console.error('Failed to prepare pass image for sharing:', error);
-      }
+      // Desktop X's web intent does NOT support attaching local images.
+      // Download the generated PNG automatically, then open the tweet
+      // composer with the caption ready. The image is now in Downloads.
+      const firstName = builderData.firstName.trim() || 'builder';
+      const lastName = builderData.lastName.trim() || 'pass';
+      const filename = `HHGOA-${firstName}-${lastName}.png`;
+
+      const imageUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = imageUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      // Give the browser a moment to start the download before opening X.
+      setTimeout(() => {
+        URL.revokeObjectURL(imageUrl);
+        window.open(shareUrl, '_blank', 'noopener,noreferrer');
+      }, 250);
+    } catch (error) {
+      console.error('Failed to prepare pass image for sharing:', error);
+
+      // Even if image generation fails, don't leave the user stuck.
+      window.open(shareUrl, '_blank', 'noopener,noreferrer');
     }
-    window.open(shareUrl, '_blank', 'noopener,noreferrer');
   };
 
   return (
