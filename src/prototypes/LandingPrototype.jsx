@@ -140,6 +140,14 @@ export default function LandingPrototype() {
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setBuilderData((prev) => ({ ...prev, [name]: value }));
+    // Clear that field's error the moment the user starts fixing it, rather
+    // than making them resubmit to see it disappear.
+    setFieldErrors((prev) => {
+      if (!prev[name]) return prev;
+      const next = { ...prev };
+      delete next[name];
+      return next;
+    });
   };
 
   const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
@@ -161,6 +169,48 @@ export default function LandingPrototype() {
   const ACCEPTED_EXTENSIONS = /\.(jpe?g|png|webp|gif|bmp|tiff?|avif|heic|heif|svg)$/i;
 
   const [uploadError, setUploadError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [formError, setFormError] = useState('');
+
+  const REQUIRED_FIELDS = [
+    { name: 'firstName', label: 'First Name' },
+    { name: 'lastName', label: 'Last Name' },
+    { name: 'role', label: 'Role / Discipline' },
+    { name: 'location', label: 'Location' },
+    { name: 'archetype', label: 'Builder Class' },
+    { name: 'techStack', label: 'Primary Stack' },
+  ];
+
+  // Checks the photo + every required field; returns true if the form is
+  // ready to generate/share, and populates fieldErrors/formError otherwise.
+  const validateForm = () => {
+    const errors = {};
+    REQUIRED_FIELDS.forEach(({ name, label }) => {
+      if (!builderData[name] || !builderData[name].trim()) {
+        errors[name] = `${label} is required`;
+      }
+    });
+
+    const missingPhoto = !croppedImage;
+    setFieldErrors(errors);
+
+    if (missingPhoto || Object.keys(errors).length > 0) {
+      const parts = [];
+      if (missingPhoto) parts.push('a portrait photo');
+      if (Object.keys(errors).length > 0) {
+        parts.push(
+          Object.keys(errors).length === 1
+            ? 'the highlighted field'
+            : 'the highlighted fields'
+        );
+      }
+      setFormError(`Please add ${parts.join(' and ')} before continuing.`);
+      return false;
+    }
+
+    setFormError('');
+    return true;
+  };
 
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
@@ -225,7 +275,10 @@ export default function LandingPrototype() {
     (async () => {
       try {
         const cropped = await getCroppedImg(image, croppedAreaPixels, rotation);
-        if (!cancelled) setCroppedImage(cropped);
+        if (!cancelled) {
+          setCroppedImage(cropped);
+          setFormError('');
+        }
       } catch (err) {
         console.error('Failed to crop image:', err);
       }
@@ -247,6 +300,7 @@ export default function LandingPrototype() {
   // Profile Generation & Service Persist
   const handleDownload = async () => {
     if (!cardRef.current || isProcessing) return;
+    if (!validateForm()) return;
     setIsProcessing(true);
 
     try {
@@ -308,69 +362,43 @@ export default function LandingPrototype() {
   };
 
   const handleShareOnX = async () => {
+    if (!validateForm()) return;
     const tweetText = `Just claimed my Builder Identity for Hacker House Goa 2026 🚀\n\nBuilt with #FrameInGoa\n#HHGoa`;
     const shareUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(tweetText)}`;
 
-    if (!cardRef.current) {
-      window.open(shareUrl, '_blank', 'noopener,noreferrer');
-      return;
-    }
-
-    try {
-      // Generate the exact passport image currently visible in the preview.
-      const blob = await svgToPngBlob(cardRef.current, 2);
-      const file = new File([blob], 'hhgoa-builder-pass.png', {
-        type: 'image/png',
-      });
-
-      // On phones/tablets, use the native share sheet. If X is installed,
-      // the X app can receive both the image and caption together.
-      if (
-        isMobileDevice &&
-        typeof navigator !== 'undefined' &&
-        navigator.share &&
-        navigator.canShare &&
-        navigator.canShare({ files: [file] })
-      ) {
-        try {
+    // Mobile: try the native share sheet first (X's app usually registers
+    // as a share target there, and it can carry the image + caption together).
+    if (isMobileDevice && canShareFiles && cardRef.current) {
+      try {
+        const blob = await svgToPngBlob(cardRef.current, 2);
+        const file = new File([blob], 'hhgoa-builder-pass.png', { type: 'image/png' });
+        if (navigator.canShare({ files: [file] })) {
           await navigator.share({
             files: [file],
             text: tweetText,
             title: 'HH Goa Builder Pass',
           });
           return;
-        } catch (error) {
-          // User cancelled the share sheet — don't open anything else.
-          if (error?.name === 'AbortError') return;
         }
+      } catch (error) {
+        if (error?.name === 'AbortError') return;
+        // fall through to the intent link below on any other failure
       }
-
-      // Desktop X's web intent does NOT support attaching local images.
-      // Download the generated PNG automatically, then open the tweet
-      // composer with the caption ready. The image is now in Downloads.
-      const firstName = builderData.firstName.trim() || 'builder';
-      const lastName = builderData.lastName.trim() || 'pass';
-      const filename = `HHGOA-${firstName}-${lastName}.png`;
-
-      const imageUrl = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = imageUrl;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-
-      // Give the browser a moment to start the download before opening X.
-      setTimeout(() => {
-        URL.revokeObjectURL(imageUrl);
-        window.open(shareUrl, '_blank', 'noopener,noreferrer');
-      }, 250);
-    } catch (error) {
-      console.error('Failed to prepare pass image for sharing:', error);
-
-      // Even if image generation fails, don't leave the user stuck.
-      window.open(shareUrl, '_blank', 'noopener,noreferrer');
     }
+
+    // Desktop (and any mobile fallback): X's web intent can only pre-fill
+    // text/hashtags, not an attached image — that's a platform limitation,
+    // not something we can script around. So we open the pre-filled tweet
+    // immediately AND download the pass image, so it's sitting in Downloads
+    // ready to drag into the tweet compose box — no OS share sheet detour.
+    if (cardRef.current) {
+      try {
+        await downloadCardImage();
+      } catch (error) {
+        console.error('Failed to prepare pass image for sharing:', error);
+      }
+    }
+    window.open(shareUrl, '_blank', 'noopener,noreferrer');
   };
 
   return (
@@ -594,7 +622,7 @@ export default function LandingPrototype() {
                         }
                       }}
                       className={`border-2 border-dashed bg-[#0F4A31] p-8 text-center cursor-pointer transition-all duration-300 group rounded-2xl ${
-                        uploadError ? 'border-[#FF3E8E]' : 'border-[#2A7F4C] hover:border-[#F2C14E]'
+                        uploadError || (formError && !croppedImage) ? 'border-[#FF3E8E]' : 'border-[#2A7F4C] hover:border-[#F2C14E]'
                       }`}
                       role="button"
                       aria-label="Upload Avatar Image"
@@ -620,6 +648,12 @@ export default function LandingPrototype() {
                       <p className="mt-3 text-[11px] text-[#FF3E8E] font-bold tracking-wide flex items-start gap-1.5">
                         <X className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
                         {uploadError}
+                      </p>
+                    )}
+                    {!uploadError && formError && !croppedImage && (
+                      <p className="mt-3 text-[11px] text-[#FF3E8E] font-bold tracking-wide flex items-start gap-1.5">
+                        <X className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                        Portrait photo is required
                       </p>
                     )}
                   </div>
@@ -703,8 +737,14 @@ export default function LandingPrototype() {
                         value={builderData.firstName}
                         onChange={handleInputChange}
                         placeholder="Aarav"
-                        className="w-full bg-[#0F4A31] border-b border-[#2A7F4C] focus:border-[#F2C14E] px-3 py-2 text-[#F6EFDD] text-xs tracking-wider placeholder-[rgba(246,239,221,0.2)] focus:outline-none transition-colors duration-200"
+                        aria-invalid={!!fieldErrors.firstName}
+                        className={`w-full bg-[#0F4A31] border-b px-3 py-2 text-[#F6EFDD] text-xs tracking-wider placeholder-[rgba(246,239,221,0.2)] focus:outline-none transition-colors duration-200 ${
+                          fieldErrors.firstName ? 'border-[#FF3E8E]' : 'border-[#2A7F4C] focus:border-[#F2C14E]'
+                        }`}
                       />
+                      {fieldErrors.firstName && (
+                        <p className="text-[10px] text-[#FF3E8E] font-bold tracking-wide">{fieldErrors.firstName}</p>
+                      )}
                     </div>
 
                     <div className="space-y-2">
@@ -718,8 +758,14 @@ export default function LandingPrototype() {
                         value={builderData.lastName}
                         onChange={handleInputChange}
                         placeholder="Sharma"
-                        className="w-full bg-[#0F4A31] border-b border-[#2A7F4C] focus:border-[#F2C14E] px-3 py-2 text-[#F6EFDD] text-xs tracking-wider placeholder-[rgba(246,239,221,0.2)] focus:outline-none transition-colors duration-200"
+                        aria-invalid={!!fieldErrors.lastName}
+                        className={`w-full bg-[#0F4A31] border-b px-3 py-2 text-[#F6EFDD] text-xs tracking-wider placeholder-[rgba(246,239,221,0.2)] focus:outline-none transition-colors duration-200 ${
+                          fieldErrors.lastName ? 'border-[#FF3E8E]' : 'border-[#2A7F4C] focus:border-[#F2C14E]'
+                        }`}
                       />
+                      {fieldErrors.lastName && (
+                        <p className="text-[10px] text-[#FF3E8E] font-bold tracking-wide">{fieldErrors.lastName}</p>
+                      )}
                     </div>
                   </div>
 
@@ -735,8 +781,14 @@ export default function LandingPrototype() {
                         value={builderData.role}
                         onChange={handleInputChange}
                         placeholder="Full-Stack Developer"
-                        className="w-full bg-[#0F4A31] border-b border-[#2A7F4C] focus:border-[#F2C14E] px-3 py-2 text-[#F6EFDD] text-xs tracking-wider placeholder-[rgba(246,239,221,0.2)] focus:outline-none transition-colors duration-200"
+                        aria-invalid={!!fieldErrors.role}
+                        className={`w-full bg-[#0F4A31] border-b px-3 py-2 text-[#F6EFDD] text-xs tracking-wider placeholder-[rgba(246,239,221,0.2)] focus:outline-none transition-colors duration-200 ${
+                          fieldErrors.role ? 'border-[#FF3E8E]' : 'border-[#2A7F4C] focus:border-[#F2C14E]'
+                        }`}
                       />
+                      {fieldErrors.role && (
+                        <p className="text-[10px] text-[#FF3E8E] font-bold tracking-wide">{fieldErrors.role}</p>
+                      )}
                     </div>
 
                     <div className="space-y-2">
@@ -750,8 +802,14 @@ export default function LandingPrototype() {
                         value={builderData.location}
                         onChange={handleInputChange}
                         placeholder="Goa, India"
-                        className="w-full bg-[#0F4A31] border-b border-[#2A7F4C] focus:border-[#F2C14E] px-3 py-2 text-[#F6EFDD] text-xs tracking-wider placeholder-[rgba(246,239,221,0.2)] focus:outline-none transition-colors duration-200"
+                        aria-invalid={!!fieldErrors.location}
+                        className={`w-full bg-[#0F4A31] border-b px-3 py-2 text-[#F6EFDD] text-xs tracking-wider placeholder-[rgba(246,239,221,0.2)] focus:outline-none transition-colors duration-200 ${
+                          fieldErrors.location ? 'border-[#FF3E8E]' : 'border-[#2A7F4C] focus:border-[#F2C14E]'
+                        }`}
                       />
+                      {fieldErrors.location && (
+                        <p className="text-[10px] text-[#FF3E8E] font-bold tracking-wide">{fieldErrors.location}</p>
+                      )}
                     </div>
                   </div>
 
@@ -766,8 +824,14 @@ export default function LandingPrototype() {
                       value={builderData.archetype}
                       onChange={handleInputChange}
                       placeholder="System Architect"
-                      className="w-full bg-[#0F4A31] border-b border-[#2A7F4C] focus:border-[#F2C14E] px-3 py-2 text-[#F6EFDD] text-xs tracking-wider placeholder-[rgba(246,239,221,0.2)] focus:outline-none transition-colors duration-200"
+                      aria-invalid={!!fieldErrors.archetype}
+                      className={`w-full bg-[#0F4A31] border-b px-3 py-2 text-[#F6EFDD] text-xs tracking-wider placeholder-[rgba(246,239,221,0.2)] focus:outline-none transition-colors duration-200 ${
+                        fieldErrors.archetype ? 'border-[#FF3E8E]' : 'border-[#2A7F4C] focus:border-[#F2C14E]'
+                      }`}
                     />
+                    {fieldErrors.archetype && (
+                      <p className="text-[10px] text-[#FF3E8E] font-bold tracking-wide">{fieldErrors.archetype}</p>
+                    )}
                   </div>
                 </form>
               </div>
@@ -788,13 +852,25 @@ export default function LandingPrototype() {
                     value={builderData.techStack}
                     onChange={handleInputChange}
                     placeholder="React, Node.js, TypeScript, Rust"
-                    className="w-full bg-[#0F4A31] border-b border-[#2A7F4C] focus:border-[#F2C14E] px-3 py-2 text-[#F6EFDD] text-xs tracking-wider placeholder-[rgba(246,239,221,0.2)] focus:outline-none transition-colors duration-200"
+                    aria-invalid={!!fieldErrors.techStack}
+                    className={`w-full bg-[#0F4A31] border-b px-3 py-2 text-[#F6EFDD] text-xs tracking-wider placeholder-[rgba(246,239,221,0.2)] focus:outline-none transition-colors duration-200 ${
+                      fieldErrors.techStack ? 'border-[#FF3E8E]' : 'border-[#2A7F4C] focus:border-[#F2C14E]'
+                    }`}
                   />
+                  {fieldErrors.techStack && (
+                    <p className="text-[10px] text-[#FF3E8E] font-bold tracking-wide">{fieldErrors.techStack}</p>
+                  )}
                 </div>
               </div>
 
               {/* Button System */}
               <div className="pt-6 border-t border-[#2A7F4C] space-y-3">
+                {formError && (
+                  <p className="text-[11px] text-[#FF3E8E] font-bold tracking-wide flex items-start gap-1.5 bg-[#FF3E8E]/10 border border-[#FF3E8E]/40 rounded-lg px-3 py-2">
+                    <X className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                    {formError}
+                  </p>
+                )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   
                   {/* Primary CTA */}
